@@ -151,7 +151,7 @@ function spawnSingleBot() {
                 return;
             }
 
-            const raidMsg = `raided by spyer.lol ${globalMessageCounter}`;
+            const raidMsg = `this server fukxed by spyer.lol ${globalMessageCounter}`;
             bot.chat(raidMsg);
             console.log(`[💬] (${username}) Sent: "${raidMsg}"`);
             
