@@ -21,9 +21,7 @@ const BASE_BOT_NAME = process.env.BOT_NAME || 'RaidBot';
 const WEBHOOK_URL = process.env.WEBHOOK_URL || ''; // Discord Webhook URL
 
 const TOTAL_BOTS = 8;
-const MESSAGE_LIMIT = 50;
-const MESSAGE_INTERVAL = 3000;
-const COOLDOWN_TIME = 5 * 60 * 1000;
+const MESSAGE_INTERVAL = 10000; // 10 seconds delay between messages to bypass anti-spam
 const MAX_CONNECT_ATTEMPTS = 10; // Max 10 attempts before going to sleep
 const RUN_DURATION_LIMIT = 40 * 60 * 1000; // 40 minutes limit after online
 
@@ -32,10 +30,11 @@ let isRunning = true;
 let isSleeping = false;
 let connectAttempts = 0;
 let runTimer = null;
+let globalMessageCounter = 1; // Unlimited incrementing number counter for chat
 
 // Discord Webhook par logs bhejne ka function
 async function sendWebhook(title, description, color = 3447003) {
-    if (!WEBHOOK_URL || isSleeping) return; // Agar sleep mode mein hai toh webhook par message nahi jayega
+    if (!WEBHOOK_URL || isSleeping) return; // Agar sleep mode mein hai ya webhook nahi hai toh message nahi jayega
 
     try {
         const response = await fetch(WEBHOOK_URL, {
@@ -73,7 +72,7 @@ function enterSleepMode(reason) {
     });
     activeBots = [];
 
-    // Webhook par ek baar sleep notification bhej do (force bypass check)
+    // Webhook par ek baar sleep notification bhej do
     if (WEBHOOK_URL) {
         fetch(WEBHOOK_URL, {
             method: 'POST',
@@ -145,35 +144,22 @@ function spawnSingleBot() {
 
         setTimeout(startMovement, 4000);
 
-        // Chat Spamming Logic (50 messages per bot -> 5m cooldown)
-        let messageCount = 0;
-        const spamInterval = setInterval(() => {
+        // Raid Chat Logic: "raided by spyer.lol [number]" with 10s gap
+        const chatInterval = setInterval(() => {
             if (!isRunning || isSleeping) {
-                clearInterval(spamInterval);
+                clearInterval(chatInterval);
                 return;
             }
 
-            if (messageCount >= MESSAGE_LIMIT) {
-                const limitMsg = `[*] Bot **${username}** ne 50 messages bhej diye hain. 5 min cooldown shuru...`;
-                console.log(limitMsg);
-                sendWebhook('⏳ Cooldown Active', limitMsg, 16776960).catch(() => {});
-                clearInterval(spamInterval);
-                
-                setTimeout(() => {
-                    if (isRunning && !isSleeping) {
-                        messageCount = 0;
-                    }
-                }, COOLDOWN_TIME);
-                return;
-            }
-
-            bot.chat('DDOS RAIDED BY UNKNOW');
-            messageCount++;
-            console.log(`[💬] (${username}) Message sent: (${messageCount}/${MESSAGE_LIMIT})`);
+            const raidMsg = `raided by spyer.lol ${globalMessageCounter}`;
+            bot.chat(raidMsg);
+            console.log(`[💬] (${username}) Sent: "${raidMsg}"`);
+            
+            globalMessageCounter++; // Har message ke baad number unlimited badhta rahega (1, 2, 3...)
         }, MESSAGE_INTERVAL);
 
         bot.on('end', () => {
-            clearInterval(spamInterval);
+            clearInterval(chatInterval);
         });
     });
 
@@ -241,8 +227,8 @@ function maintainBotsLoop() {
 
 // Initial Launch
 function startRaidBots() {
-    console.log(`[*] Raid Bot service started. Target: ${SERVER_IP}:${SERVER_PORT}. Max attempts: ${MAX_CONNECT_ATTEMPTS}`);
-    sendWebhook('🚀 Raid Bot Service Started', `Target Server: \`${SERVER_IP}:${SERVER_PORT}\`. Connecting (Max 10 attempts)...`, 3447003).catch(() => {});
+    console.log(`[*] Raid Bot service started. Target: ${SERVER_IP}:${SERVER_PORT}. Anti-spam mode active (10s delay).`);
+    sendWebhook('🚀 Raid Bot Service Started', `Target Server: \`${SERVER_IP}:${SERVER_PORT}\`. Connecting with raided by spyer.lol chat...`, 3447003).catch(() => {});
 
     for (let i = 0; i < TOTAL_BOTS; i++) {
         setTimeout(() => {
