@@ -20,11 +20,11 @@ const PASSWORD = process.env.BOT_PASSWORD || 'RaidPass123';
 const BASE_BOT_NAME = process.env.BOT_NAME || 'RaidBot';
 const WEBHOOK_URL = process.env.WEBHOOK_URL || '';
 
-const TOTAL_BOTS = 4; // Aap chaho toh badha kar 8 bhi kar sakte ho baad me
-const MESSAGE_INTERVAL = 12000; // 12 seconds anti-spam delay
+const TOTAL_BOTS = 6; // Aap ise badha kar 8 bhi kar sakte hain!
+const MESSAGE_INTERVAL = 8000; // Har 8 seconds me message (anti-spam bypass ke liye safe)
 const RUN_DURATION_LIMIT = 40 * 60 * 1000; // 40 minutes limit
 
-let activeBots = new Map(); // Slot-based tracking (1 to TOTAL_BOTS)
+let activeBots = new Map();
 let isRunning = true;
 let isSleeping = false;
 
@@ -79,11 +79,11 @@ function enterSleepMode(reason) {
     }
 }
 
-// Single Bot Spawner for a Specific Slot ID
+// Single Bot Spawner
 function spawnBotInstance(botId) {
     if (!isRunning || isSleeping) return;
 
-    // Agar pehle se us slot me koi bot tha, toh use forcefully clear karo
+    // Purana instance saaf karo agar bacha ho
     if (activeBots.has(botId)) {
         try { activeBots.get(botId).bot.quit(); } catch(e) {}
         activeBots.delete(botId);
@@ -107,17 +107,17 @@ function spawnBotInstance(botId) {
         console.log(`[+] Bot ${username} (Slot ${botId}) successfully joined!`);
         sendWebhook('🟢 Bot Connected', `**${username}** (Slot ${botId}) server par join ho gaya hai!`, 3066993).catch(() => {});
 
-        // Login & Register sequence
+        // Login & Register sequence (Thoda delay taaki server load na le)
         setTimeout(() => {
             if (!isRunning || isSleeping) return;
             bot.chat(`/register ${PASSWORD} ${PASSWORD}`);
             setTimeout(() => {
                 if (!isRunning || isSleeping) return;
                 bot.chat(`/login ${PASSWORD}`);
-            }, 2000);
-        }, 3000);
+            }, 2500);
+        }, 4000);
 
-        // Simple Anti-AFK movement to prevent timeout disconnect
+        // Anti-AFK movement loop
         botData.moveInterval = setInterval(() => {
             if (!isRunning || isSleeping) return;
             try {
@@ -125,11 +125,11 @@ function spawnBotInstance(botId) {
                 setTimeout(() => {
                     if (!isRunning || isSleeping) return;
                     bot.setControlState('jump', false);
-                }, 500);
+                }, 600);
             } catch (e) {}
-        }, 15000);
+        }, 12000);
 
-        // Individual Chat Spam Loop
+        // Robust Chat Spam Loop (Har bot ka apna unique counter aur random delay)
         let localMsgCounter = 1;
         botData.chatInterval = setInterval(() => {
             if (!isRunning || isSleeping) {
@@ -137,24 +137,28 @@ function spawnBotInstance(botId) {
                 return;
             }
 
-            const raidMsg = `this server fukxed by spyer.lol [${localMsgCounter}]`;
+            // Alag-alag random numbers attach honge taaki server spam block na kare
+            const randomTag = Math.floor(Math.random() * 90000 + 10000);
+            const raidMsg = `this server fukxed by spyer.lol [${localMsgCounter}] #${randomTag}`;
+            
             try {
                 bot.chat(raidMsg);
                 console.log(`[💬] (${username}) Sent: "${raidMsg}"`);
                 localMsgCounter++;
             } catch (e) {
+                console.log(`[!] Chat error for ${username}:`, e.message);
                 clearInterval(botData.chatInterval);
             }
-        }, MESSAGE_INTERVAL + (botId * 500));
+        }, MESSAGE_INTERVAL + (botId * 1500)); // Har bot ke beech me timing offset
 
-        // Event Listeners for Disconnection / Kick / Error
+        // Event Listeners
         bot.on('end', (reason) => {
-            console.log(`[-] Bot ${username} (Slot ${botId}) disconnected. Reason: ${reason}`);
+            console.log(`[-] Bot ${username} (Slot ${botId}) disconnected: ${reason}`);
             handleBotDisconnect(botId);
         });
 
         bot.on('kicked', (reason) => {
-            console.log(`[-] Bot ${username} (Slot ${botId}) kicked! Reason: ${reason}`);
+            console.log(`[-] Bot ${username} (Slot ${botId}) kicked: ${reason}`);
             sendWebhook('🔴 Bot Kicked', `**${username}** kick ho gaya. Reason: ${reason}`, 15158332).catch(() => {});
             handleBotDisconnect(botId);
         });
@@ -166,11 +170,10 @@ function spawnBotInstance(botId) {
     });
 }
 
-// Turant usi slot par naya bot spawn karne ka handler
+// Disconnect hone par turant slot refill karna
 function handleBotDisconnect(botId) {
     if (isSleeping || !isRunning) return;
 
-    // Purane intervals clear karo aur map se delete karo
     if (activeBots.has(botId)) {
         const data = activeBots.get(botId);
         if (data.chatInterval) clearInterval(data.chatInterval);
@@ -178,9 +181,7 @@ function handleBotDisconnect(botId) {
         activeBots.delete(botId);
     }
 
-    console.log(`[↺] Slot [${botId}] empty ho gaya hai. 3 second me naya bot spawn ho raha hai...`);
-    
-    // 3 seconds ke andar turant naya bot usi slot par aa jayega
+    console.log(`[↺] Slot [${botId}] empty. Respawning in 3 seconds...`);
     setTimeout(() => {
         if (isRunning && !isSleeping && !activeBots.has(botId)) {
             spawnBotInstance(botId);
@@ -188,7 +189,7 @@ function handleBotDisconnect(botId) {
     }, 3000);
 }
 
-// Background safety loop jo check karega ki agar koi slot khali reh gaya ho toh use fill karde
+// Safety Loop: Agar koi bot gayab ho toh use wapas lana
 function maintainSlotsLoop() {
     setInterval(() => {
         if (!isRunning || isSleeping) return;
@@ -197,21 +198,22 @@ function maintainSlotsLoop() {
             if (!activeBots.has(i) && isRunning && !isSleeping) {
                 console.log(`[!] Safety Check: Slot [${i}] khali mila. Respawning...`);
                 spawnBotInstance(i);
+                break; // Ek baar me ek spawn karega taaki network overload na ho
             }
         }
-    }, 6000); // Har 6 second me check karega
+    }, 4000);
 }
 
-// Initial Launch sequence
+// Initial Launch Sequence (Safe Staggering for 6-8 bots)
 function startRaidBots() {
     console.log(`[*] Raid Bot service started. Target: ${SERVER_IP}:${SERVER_PORT}`);
-    sendWebhook('🚀 Raid Bot Service Started', `Target: \`${SERVER_IP}:${SERVER_PORT}\`. Spawning ${TOTAL_BOTS} slots...`, 3447003).catch(() => {});
+    sendWebhook('🚀 Raid Bot Service Started', `Target: \`${SERVER_IP}:${SERVER_PORT}\`. Spawning ${TOTAL_BOTS} bots...`, 3447003).catch(() => {});
 
     for (let i = 1; i <= TOTAL_BOTS; i++) {
         setTimeout(() => {
             if (!isRunning || isSleeping) return;
             spawnBotInstance(i);
-        }, (i - 1) * 2000); // 2 seconds gap between each bot startup
+        }, (i - 1) * 3000); // 3 seconds gap between each bot to prevent Render/Server connection drop
     }
 
     maintainSlotsLoop();
