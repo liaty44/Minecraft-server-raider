@@ -20,11 +20,11 @@ const PASSWORD = process.env.BOT_PASSWORD || 'RaidPass123';
 const BASE_BOT_NAME = process.env.BOT_NAME || 'RaidBot';
 const WEBHOOK_URL = process.env.WEBHOOK_URL || '';
 
-const TOTAL_BOTS = 4; // Abhi stable 4 bots par set hai (aap baad me badha sakte hain)
+const TOTAL_BOTS = 4; // Aap chaho toh badha kar 8 bhi kar sakte ho baad me
 const MESSAGE_INTERVAL = 12000; // 12 seconds anti-spam delay
 const RUN_DURATION_LIMIT = 40 * 60 * 1000; // 40 minutes limit
 
-let activeBots = new Map(); // Unique tracking using Map to prevent duplication bugs
+let activeBots = new Map(); // Slot-based tracking (1 to TOTAL_BOTS)
 let isRunning = true;
 let isSleeping = false;
 
@@ -79,19 +79,18 @@ function enterSleepMode(reason) {
     }
 }
 
-// Single Bot Spawner
+// Single Bot Spawner for a Specific Slot ID
 function spawnBotInstance(botId) {
     if (!isRunning || isSleeping) return;
 
-    // Unique username with random suffix
-    const username = `${BASE_BOT_NAME}_${botId}_${Math.floor(Math.random() * 900 + 100)}`;
-    
+    // Agar pehle se us slot me koi bot tha, toh use forcefully clear karo
     if (activeBots.has(botId)) {
         try { activeBots.get(botId).bot.quit(); } catch(e) {}
         activeBots.delete(botId);
     }
 
-    console.log(`[?] Connecting bot ID ${botId}: ${username}`);
+    const username = `${BASE_BOT_NAME}_${botId}_${Math.floor(Math.random() * 900 + 100)}`;
+    console.log(`[?] Connecting Slot [${botId}] -> Username: ${username}`);
 
     const bot = mineflayer.createBot({
         host: SERVER_IP,
@@ -105,8 +104,8 @@ function spawnBotInstance(botId) {
     activeBots.set(botId, botData);
 
     bot.on('spawn', () => {
-        console.log(`[+] Bot ${username} successfully joined!`);
-        sendWebhook('🟢 Bot Connected', `**${username}** server par join ho gaya hai!`, 3066993).catch(() => {});
+        console.log(`[+] Bot ${username} (Slot ${botId}) successfully joined!`);
+        sendWebhook('🟢 Bot Connected', `**${username}** (Slot ${botId}) server par join ho gaya hai!`, 3066993).catch(() => {});
 
         // Login & Register sequence
         setTimeout(() => {
@@ -146,28 +145,32 @@ function spawnBotInstance(botId) {
             } catch (e) {
                 clearInterval(botData.chatInterval);
             }
-        }, MESSAGE_INTERVAL + (botId * 1000)); // Staggered interval per bot id to avoid simultaneous packet drops
+        }, MESSAGE_INTERVAL + (botId * 500));
 
+        // Event Listeners for Disconnection / Kick / Error
         bot.on('end', (reason) => {
-            cleanupAndRespawn(botId, `Disconnected: ${reason}`);
+            console.log(`[-] Bot ${username} (Slot ${botId}) disconnected. Reason: ${reason}`);
+            handleBotDisconnect(botId);
         });
-    });
 
-    bot.on('kicked', (reason) => {
-        console.log(`[-] Bot ${username} kicked: ${reason}`);
-        cleanupAndRespawn(botId, `Kicked: ${reason}`);
-    });
+        bot.on('kicked', (reason) => {
+            console.log(`[-] Bot ${username} (Slot ${botId}) kicked! Reason: ${reason}`);
+            sendWebhook('🔴 Bot Kicked', `**${username}** kick ho gaya. Reason: ${reason}`, 15158332).catch(() => {});
+            handleBotDisconnect(botId);
+        });
 
-    bot.on('error', (err) => {
-        console.log(`[-] Bot ${username} error: ${err.message}`);
-        cleanupAndRespawn(botId, `Error: ${err.message}`);
+        bot.on('error', (err) => {
+            console.log(`[-] Bot ${username} (Slot ${botId}) error: ${err.message}`);
+            handleBotDisconnect(botId);
+        });
     });
 }
 
-// Clean and respawn specific bot ID instantly
-function cleanupAndRespawn(botId, reason) {
+// Turant usi slot par naya bot spawn karne ka handler
+function handleBotDisconnect(botId) {
     if (isSleeping || !isRunning) return;
 
+    // Purane intervals clear karo aur map se delete karo
     if (activeBots.has(botId)) {
         const data = activeBots.get(botId);
         if (data.chatInterval) clearInterval(data.chatInterval);
@@ -175,42 +178,43 @@ function cleanupAndRespawn(botId, reason) {
         activeBots.delete(botId);
     }
 
-    console.log(`[↺] Respawning Bot ID ${botId} in 4 seconds...`);
+    console.log(`[↺] Slot [${botId}] empty ho gaya hai. 3 second me naya bot spawn ho raha hai...`);
+    
+    // 3 seconds ke andar turant naya bot usi slot par aa jayega
     setTimeout(() => {
-        if (isRunning && !isSleeping) {
+        if (isRunning && !isSleeping && !activeBots.has(botId)) {
             spawnBotInstance(botId);
         }
-    }, 4000);
+    }, 3000);
 }
 
-// Maintain exact total bots loop
-function maintainBotsLoop() {
+// Background safety loop jo check karega ki agar koi slot khali reh gaya ho toh use fill karde
+function maintainSlotsLoop() {
     setInterval(() => {
         if (!isRunning || isSleeping) return;
 
         for (let i = 1; i <= TOTAL_BOTS; i++) {
             if (!activeBots.has(i) && isRunning && !isSleeping) {
-                console.log(`[+] Slot ${i} is empty. Spawning replacement bot...`);
+                console.log(`[!] Safety Check: Slot [${i}] khali mila. Respawning...`);
                 spawnBotInstance(i);
-                break; // Ek baar me ek spawn karega taaki overload na ho
             }
         }
-    }, 5000);
+    }, 6000); // Har 6 second me check karega
 }
 
-// Initial Launch sequence with 2.5 seconds gap between each bot
+// Initial Launch sequence
 function startRaidBots() {
     console.log(`[*] Raid Bot service started. Target: ${SERVER_IP}:${SERVER_PORT}`);
-    sendWebhook('🚀 Raid Bot Service Started', `Target: \`${SERVER_IP}:${SERVER_PORT}\`. Spawning ${TOTAL_BOTS} bots securely...`, 3447003).catch(() => {});
+    sendWebhook('🚀 Raid Bot Service Started', `Target: \`${SERVER_IP}:${SERVER_PORT}\`. Spawning ${TOTAL_BOTS} slots...`, 3447003).catch(() => {});
 
     for (let i = 1; i <= TOTAL_BOTS; i++) {
         setTimeout(() => {
             if (!isRunning || isSleeping) return;
             spawnBotInstance(i);
-        }, (i - 1) * 2500); // 2.5 seconds gap securely between each connection
+        }, (i - 1) * 2000); // 2 seconds gap between each bot startup
     }
 
-    maintainBotsLoop();
+    maintainSlotsLoop();
 
     setTimeout(() => {
         enterSleepMode(`40 minutes time limit completed.`);
@@ -220,4 +224,3 @@ function startRaidBots() {
 setTimeout(() => {
     startRaidBots();
 }, 2000);
-
