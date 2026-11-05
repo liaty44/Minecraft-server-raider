@@ -14,13 +14,23 @@ app.listen(PORT, () => {
 });
 
 // ---------------- ENVIRONMENT CONFIGURATION ----------------
-// Yahan direct server address dalein (Jaise: yourserver.aternos.me ya IP)
-const SERVER_HOST = process.env.SERVER_IP || 'yourserver.aternos.me'; 
+// Render variable se value lega. Agar port hua to parse ho jayega, nahi hua to sirf domain/IP use hoga.
+const RAW_SERVER_INPUT = process.env.SERVER_IP || 'CraftySmpseason2.pixelforge.gg';
 const PASSWORD = process.env.BOT_PASSWORD || 'RaidPass123';
 const BASE_BOT_NAME = process.env.BOT_NAME || 'RaidBot';
 const WEBHOOK_URL = process.env.WEBHOOK_URL || '';
 
-const TOTAL_BOTS = 6; // Aap ise 8 bhi kar sakte hain agar server handle kare
+// Automatically detect host and port from environment variable
+let SERVER_HOST = RAW_SERVER_INPUT;
+let SERVER_PORT = 25565; // Default Minecraft port
+
+if (RAW_SERVER_INPUT.includes(':')) {
+    const parts = RAW_SERVER_INPUT.split(':');
+    SERVER_HOST = parts[0];
+    SERVER_PORT = parseInt(parts[1]) || 25565;
+}
+
+const TOTAL_BOTS = 6; // 6 se 8 bots stable join honge
 const MESSAGE_INTERVAL = 7000; // 7 seconds anti-spam gap
 const RUN_DURATION_LIMIT = 40 * 60 * 1000; // 40 minutes limit
 
@@ -79,7 +89,7 @@ function enterSleepMode(reason) {
     }
 }
 
-// Single Bot Spawner (Direct Host - No Port Required)
+// Single Bot Spawner (Dynamic Host & Port Parser)
 function spawnBotInstance(botId) {
     if (!isRunning || isSleeping) return;
 
@@ -89,10 +99,11 @@ function spawnBotInstance(botId) {
     }
 
     const username = `${BASE_BOT_NAME}_${botId}_${Math.floor(Math.random() * 900 + 100)}`;
-    console.log(`[?] Connecting Slot [${botId}] -> Username: ${username} to ${SERVER_HOST}`);
+    console.log(`[?] Connecting Slot [${botId}] -> Username: ${username} to ${SERVER_HOST}:${SERVER_PORT}`);
 
     const bot = mineflayer.createBot({
-        host: SERVER_HOST, // Direct host/IP bina port ke
+        host: SERVER_HOST,
+        port: SERVER_PORT,
         username: username,
         auth: 'offline',
         skipValidation: true,
@@ -203,8 +214,8 @@ function maintainSlotsLoop() {
 
 // Initial Launch Sequence
 function startRaidBots() {
-    console.log(`[*] Raid Bot service started. Target Host: ${SERVER_HOST}`);
-    sendWebhook('🚀 Raid Bot Service Started', `Target Host: \`${SERVER_HOST}\`. Spawning ${TOTAL_BOTS} bots...`, 3447003).catch(() => {});
+    console.log(`[*] Raid Bot service started. Target Host: ${SERVER_HOST}:${SERVER_PORT}`);
+    sendWebhook('🚀 Raid Bot Service Started', `Target Host: \`${SERVER_HOST}:${SERVER_PORT}\`. Spawning ${TOTAL_BOTS} bots...`, 3447003).catch(() => {});
 
     for (let i = 1; i <= TOTAL_BOTS; i++) {
         setTimeout(() => {
